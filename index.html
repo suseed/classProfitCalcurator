@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>수업 원가·수익 계산표</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    #controls { margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #f5f5f5; }
+    input[type="number"], input[type="text"], select, input[list] { width: 100%; box-sizing: border-box; }
+    tfoot td { font-weight: bold; }
+    button { margin:.3rem; padding:.4rem .8rem; cursor:pointer; }
+    @media print{
+      body *{visibility:hidden;}
+      #classTable, #classTable *{visibility:visible;}
+      #classTable{position:absolute;left:0;top:0;width:100%;}
+    }
+  </style>
+</head>
+<body>
+  <h1>수업 원가·수익 계산표</h1>
+
+  <!-- ==== 과목 선택용 datalist ==== -->
+  <datalist id="subjectList">
+    <option value="AI 사무활용">
+    <option value="웹툰">
+    <option value="웹소설">
+    <option value="바이브 코딩">
+  </datalist>
+
+  <!-- ==== 상단 버튼 ==== -->
+  <div id="controls">
+    <button id="addRow">행 추가</button>
+    <button id="saveCSV">CSV 저장</button>
+    <button id="saveJSON">JSON 저장</button>
+    <button id="loadJSON">JSON 파일 적용</button>
+    <input type="file" id="jsonFileInput" accept=".json" style="display:none">
+    <button id="savePDF">PDF 저장</button>
+    <button id="printDoc">인쇄</button>
+  </div>
+
+  <!-- ==== 표 ==== -->
+  <table id="classTable">
+    <thead>
+      <tr>
+        <th>과목</th>
+        <th>종류</th>
+        <th>시간(시간)</th>
+        <th>시간당 강사료(원)</th>
+        <th>총 강사료(원)</th>
+        <th>1인당 수업료(원)</th>
+        <th>학생수(명)</th>
+        <th>매출(원)</th>
+        <th>수익(원)</th>
+        <th>관리</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <tr data-editable="true">
+        <!-- ⬇️ 과목 : datalist 연결 -->
+        <td><input type="text" list="subjectList" placeholder="과목 선택 또는 입력"></td>
+
+        <td>
+          <select>
+            <option value="내일배움">내일배움</option>
+            <option value="일반">일반</option>
+            <option value="사업주 위탁">사업주 위탁</option>
+          </select>
+        </td>
+        <td><input type="number" min="0" step="0.5"></td>   <!-- 시간 -->
+        <td><input type="number" min="0" step="1000"></td>   <!-- 시간당 강사료 -->
+        <td class="cost">0</td>                              <!-- 총 강사료 -->
+        <td><input type="number" min="0" step="1000"></td>   <!-- 1인당 수업료 -->
+        <td><input type="number" min="0" step="1"></td>      <!-- 학생수 -->
+        <td class="revenue">0</td>                           <!-- 매출 -->
+        <td class="profit">0</td>                            <!-- 수익 -->
+        <td>
+          <button class="editRow">잠금</button>
+          <button class="deleteRow">삭제</button>
+        </td>
+      </tr>
+    </tbody>
+
+    <tfoot>
+      <tr>
+        <td colspan="9">총 수익 합계</td>
+        <td id="totalProfit">0</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- ==== 라이브러리 ==== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script>
+    const table = document.getElementById('classTable');
+    const tbody = table.tBodies[0];
+
+    /* ---- 계산 ---- */
+    function calcRow(row){
+      const hours    = parseFloat(row.cells[2].querySelector('input').value) || 0;
+      const rate     = parseFloat(row.cells[3].querySelector('input').value) || 0;
+      const cost     = hours * rate;
+      row.querySelector('.cost').textContent = cost.toLocaleString();
+
+      const tuition  = parseFloat(row.cells[5].querySelector('input').value) || 0;
+      const students = parseInt  (row.cells[6].querySelector('input').value) || 0;
+      const revenue  = tuition * students;
+      row.querySelector('.revenue').textContent = revenue.toLocaleString();
+
+      const profit   = revenue - cost;
+      row.querySelector('.profit').textContent = profit.toLocaleString();
+      return profit;
+    }
+    function updateTotals(){
+      let total = 0;
+      [...tbody.rows].forEach(r => total += calcRow(r));
+      document.getElementById('totalProfit').textContent = total.toLocaleString();
+    }
+
+    /* ---- 행 추가 ---- */
+    function addRow(d={}) {
+      const base = tbody.rows[0];
+      const r = base.cloneNode(true);
+
+      [...r.querySelectorAll('input')].forEach(i => { i.value=''; i.disabled=false; });
+      r.querySelector('.cost').textContent    = '0';
+      r.querySelector('.revenue').textContent = '0';
+      r.querySelector('.profit').textContent  = '0';
+      r.dataset.editable = 'true';
+
+      if(Object.keys(d).length){
+        r.cells[0].querySelector('input').value = d.subject  || '';
+        r.cells[1].querySelector('select').value= d.type     || '내일배움';
+        r.cells[2].querySelector('input').value = d.hours    || '';
+        r.cells[3].querySelector('input').value = d.rate     || '';
+        r.cells[5].querySelector('input').value = d.tuition  || '';
+        r.cells[6].querySelector('input').value = d.students || '';
+      }
+      tbody.appendChild(r);
+      updateTotals();
+    }
+
+    /* ---- 이벤트 ---- */
+    document.getElementById('addRow').addEventListener('click', () => addRow());
+    table.addEventListener('input',  e => { if(e.target.matches('input'))  updateTotals(); });
+    table.addEventListener('change', e => { if(e.target.matches('select')) updateTotals(); });
+
+    table.addEventListener('click', e=>{
+      const row = e.target.closest('tr'); if(!row) return;
+      if(e.target.classList.contains('deleteRow')){ row.remove(); updateTotals(); return; }
+      if(e.target.classList.contains('editRow')){
+        const on = row.dataset.editable==='true';
+        row.querySelectorAll('input,select').forEach(el=>el.disabled=on);
+        row.dataset.editable = on?'false':'true';
+        e.target.textContent = on?'편집':'잠금';
+      }
+    });
+
+    /* ---- 다운로드 헬퍼 ---- */
+    function dl(blob, name){
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download=name; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    }
+
+    /* CSV 저장 */
+    document.getElementById('saveCSV').addEventListener('click',()=>{
+      const rows=[['과목','종류','시간','시간당강사료','총강사료','1인당수업료','학생수','매출','수익']];
+      [...tbody.rows].forEach(r=>{
+        rows.push([
+          r.cells[0].querySelector('input').value,
+          r.cells[1].querySelector('select').value,
+          r.cells[2].querySelector('input').value,
+          r.cells[3].querySelector('input').value,
+          r.cells[4].textContent.replace(/,/g,''),
+          r.cells[5].querySelector('input').value,
+          r.cells[6].querySelector('input').value,
+          r.cells[7].textContent.replace(/,/g,''),
+          r.cells[8].textContent.replace(/,/g,'')
+        ]);
+      });
+      dl(new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'}),'class_profit.csv');
+    });
+
+    /* JSON 저장 */
+    document.getElementById('saveJSON').addEventListener('click',()=>{
+      const data=[...tbody.rows].map(r=>({
+        subject : r.cells[0].querySelector('input').value,
+        type    : r.cells[1].querySelector('select').value,
+        hours   : r.cells[2].querySelector('input').value,
+        rate    : r.cells[3].querySelector('input').value,
+        tuition : r.cells[5].querySelector('input').value,
+        students: r.cells[6].querySelector('input').value
+      }));
+      dl(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'class_profit.json');
+    });
+
+    /* JSON 로드 */
+    const fIn=document.getElementById('jsonFileInput');
+    document.getElementById('loadJSON').addEventListener('click',()=>fIn.click());
+    fIn.addEventListener('change',e=>{
+      const f=e.target.files[0]; if(!f) return;
+      const rd=new FileReader();
+      rd.onload=ev=>{
+        try{
+          const arr=JSON.parse(ev.target.result);
+          while(tbody.rows.length>1) tbody.deleteRow(1);
+          const fill=(r,d)=>{
+            r.cells[0].querySelector('input').value=d.subject ||'';
+            r.cells[1].querySelector('select').value=d.type ||'내일배움';
+            r.cells[2].querySelector('input').value=d.hours||'';
+            r.cells[3].querySelector('input').value=d.rate ||'';
+            r.cells[5].querySelector('input').value=d.tuition||'';
+            r.cells[6].querySelector('input').value=d.students||'';
+          };
+          if(arr.length){ fill(tbody.rows[0],arr[0]); for(let i=1;i<arr.length;i++) addRow(arr[i]); }
+          updateTotals();
+        }catch{ alert('JSON 파일을 읽을 수 없습니다.'); }
+      };
+      rd.readAsText(f);
+    });
+
+    /* PDF 저장 */
+    document.getElementById('savePDF').addEventListener('click',()=>{
+      const { jsPDF }=window.jspdf;
+      html2canvas(table).then(c=>{
+        const pdf=new jsPDF({orientation:'landscape',unit:'px',format:[c.width,c.height]});
+        pdf.addImage(c.toDataURL('image/png'),'PNG',0,0,c.width,c.height);
+        pdf.save('class_profit.pdf');
+      });
+    });
+
+    document.getElementById('printDoc').addEventListener('click',()=>window.print());
+
+    updateTotals();
+  </script>
+</body>
+</html>
